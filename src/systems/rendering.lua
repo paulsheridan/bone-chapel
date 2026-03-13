@@ -378,7 +378,7 @@ function Rendering.drawHUD(game)
     end
 
     love.graphics.setColor(0.03, 0.03, 0.04, 0.85)
-    love.graphics.rectangle("fill", dbgX, dbgY, 452, 146, 10, 10)
+    love.graphics.rectangle("fill", dbgX, dbgY, 452, 164, 10, 10)
     love.graphics.setColor(0.86, 0.92, 0.96)
     love.graphics.print("Debug Overlay (F3)", dbgX + 12, dbgY + 10)
     love.graphics.setColor(0.72, 0.8, 0.84)
@@ -389,8 +389,10 @@ function Rendering.drawHUD(game)
     if game.tether then
       love.graphics.print(string.format("Tether: %.1f / %.1f", game.tether.value, game.tether.max), dbgX + 12, dbgY + 102)
     end
+    love.graphics.print(string.format("Enemy suppression: %s", (game.debug and game.debug.suppressEnemies) and "ON" or "OFF"), dbgX + 12, dbgY + 120)
     love.graphics.print("F4: Toggle NPC path lines", dbgX + 262, dbgY + 10)
     love.graphics.print("F5: Toggle LOS debug", dbgX + 262, dbgY + 28)
+    love.graphics.print("F6: Toggle enemy suppression", dbgX + 262, dbgY + 46)
   end
 end
 

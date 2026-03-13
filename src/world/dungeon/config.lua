@@ -23,7 +23,7 @@ local Config = {
   },
 
   wallThickness = {
-    minVertical = 2,
+    minVertical = 3,
     minHorizontal = 2,
     passes = 1,
   },

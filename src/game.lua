@@ -316,6 +316,8 @@ function Game.load()
     enabled = false,
     showPaths = false,
     showLOS = false,
+    suppressEnemies = false,
+    storedEnemies = nil,
   }
   Game:setActiveController(choosePreferredController())
 
@@ -582,6 +584,25 @@ function Game:toggleControl()
   self.ui.msgTimer = 3
 end
 
+function Game:toggleEnemySuppression()
+  if not self.debug then
+    return
+  end
+
+  self.debug.suppressEnemies = not self.debug.suppressEnemies
+  if self.debug.suppressEnemies then
+    self.debug.storedEnemies = self.enemies
+    self.enemies = {}
+    self.ui.message = "Enemy suppression ON (F6)."
+  else
+    self.enemies = self.debug.storedEnemies or self.enemies or {}
+    self.debug.storedEnemies = nil
+    self.ui.message = "Enemy suppression OFF (F6)."
+  end
+
+  self.ui.msgTimer = 2.6
+end
+
 local function collectPickups(game)
   local collector = (game.getControlledEntity and game:getControlledEntity()) or game.necromancer
   if not collector or not collector.alive then
@@ -762,6 +783,9 @@ function Game.keypressed(key)
   elseif key == "f5" then
     Game.debug.showLOS = not Game.debug.showLOS
     Game.debug.enabled = Game.debug.showLOS or Game.debug.enabled
+    return
+  elseif key == "f6" then
+    Game:toggleEnemySuppression()
     return
   end
 
