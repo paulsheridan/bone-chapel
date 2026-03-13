@@ -357,7 +357,7 @@ local function isRightEdge(layout, x, y)
 end
 
 local function removeShortHorizontalEdgeRuns(layout, edgePredicate, requiredRun)
-  local changed = false
+  local violations = 0
   for y = 2, layout.height - 1 do
     local x = 2
     while x <= layout.width - 1 do
@@ -368,21 +368,18 @@ local function removeShortHorizontalEdgeRuns(layout, edgePredicate, requiredRun)
         end
         local x2 = x - 1
         if (x2 - x1 + 1) < requiredRun then
-          for xx = x1, x2 do
-            layout.blocked[y][xx] = false
-          end
-          changed = true
+          violations = violations + 1
         end
       else
         x = x + 1
       end
     end
   end
-  return changed
+  return violations
 end
 
 local function removeShortVerticalEdgeRuns(layout, edgePredicate, requiredRun)
-  local changed = false
+  local violations = 0
   for x = 2, layout.width - 1 do
     local y = 2
     while y <= layout.height - 1 do
@@ -393,50 +390,36 @@ local function removeShortVerticalEdgeRuns(layout, edgePredicate, requiredRun)
         end
         local y2 = y - 1
         if (y2 - y1 + 1) < requiredRun then
-          for yy = y1, y2 do
-            layout.blocked[yy][x] = false
-          end
-          changed = true
+          violations = violations + 1
         end
       else
         y = y + 1
       end
     end
   end
-  return changed
+  return violations
 end
 
 local function enforceMinStraightWalls(layout, rules)
   if type(rules) ~= "table" then
-    return
+    return 0, 0
   end
 
   local minStraight = math.max(0, math.floor(rules.minStraightBetweenCorners or 0))
   if minStraight <= 0 then
-    return
+    return 0, 0
   end
 
   local requiredRun = minStraight + 2
-  local passes = math.max(1, math.floor(rules.passes or 1))
+  local allowedViolations = math.max(0, math.floor(rules.allowedViolations or 0))
 
-  for _ = 1, passes do
-    local changed = false
-    if removeShortHorizontalEdgeRuns(layout, isTopEdge, requiredRun) then
-      changed = true
-    end
-    if removeShortHorizontalEdgeRuns(layout, isBottomEdge, requiredRun) then
-      changed = true
-    end
-    if removeShortVerticalEdgeRuns(layout, isLeftEdge, requiredRun) then
-      changed = true
-    end
-    if removeShortVerticalEdgeRuns(layout, isRightEdge, requiredRun) then
-      changed = true
-    end
-    if not changed then
-      break
-    end
-  end
+  local violations = 0
+  violations = violations + removeShortHorizontalEdgeRuns(layout, isTopEdge, requiredRun)
+  violations = violations + removeShortHorizontalEdgeRuns(layout, isBottomEdge, requiredRun)
+  violations = violations + removeShortVerticalEdgeRuns(layout, isLeftEdge, requiredRun)
+  violations = violations + removeShortVerticalEdgeRuns(layout, isRightEdge, requiredRun)
+
+  return violations, allowedViolations
 end
 
 function Generator.generate(context, rng, config)
@@ -481,7 +464,10 @@ function Generator.generate(context, rng, config)
   enforceWallThickness(layout, config.wallThickness)
   sealPerimeter(layout)
   carveTile(layout, layout.entry.x, layout.entry.y)
-  enforceMinStraightWalls(layout, config.cornerSpacing)
+  local cornerViolations, cornerAllowed = enforceMinStraightWalls(layout, config.cornerSpacing)
+  layout.cornerSpacingViolations = cornerViolations
+  layout.cornerSpacingAllowedViolations = cornerAllowed
+  layout.cornerSpacingPassed = cornerViolations <= cornerAllowed
   carveTile(layout, layout.entry.x, layout.entry.y)
 
   return layout
