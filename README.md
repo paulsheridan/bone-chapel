@@ -32,6 +32,7 @@ love .
 - `F3`: Toggle debug overlay
 - `F4`: Toggle NPC pathfinding path lines
 - `F5`: Toggle NPC line-of-sight debug rays
+- `F6`: Toggle enemy suppression (remove/restore all active enemies for testing)
 - `R`: Restart after win/lose
 
 ## Core Mechanics Included
@@ -58,38 +59,11 @@ love .
 - Expanded multi-zone town (north/center/south) plus hill-town above the graveyard
 - Wide-open overworld transitions between town, graveyard, field, and forest
 - Ground trail decals guiding travel toward the woods and cave
+- Procedural cave generation + autotiling for the cave destination zone
 
-## Code Layout
+## Documentation
 
-- `src/game.lua`: high-level game orchestration and state flow
-- `src/core/math2d.lua`: shared clamp/distance/normalization helpers
-- `src/core/movement.lua`: shared collision-aware movement helper
-- `src/systems/camera.lua`: zone camera tracking and screen-pan transitions
-- `src/systems/combat.lua`: attacks, weapon visuals, and cooldown handling
-- `src/systems/enemies.lua`: enemy spawning, AI states, pathing, and contact damage
-- `src/systems/interactions.lua`: NPC dialogue, digging, and touch warps
-- `src/systems/player.lua`: player movement/facing/attack input handling
-- `src/systems/rendering.lua`: world/entity/HUD rendering
-- `src/world/world_gen.lua`: terrain/layout generation and interior construction
-- `src/world/world_population.lua`: NPC/loot/enemy/warp placement
-- `src/world/world_render.lua`: map-layer rendering helpers
-- `src/world/world_helpers.lua`: shared world-construction primitives
-
-## Tiled Setup
-
-- Tileset configured at `assets/tiled/tilesets/roguelike_sheet.tsx` using:
-  - image: `assets/roguelikeSheet_transparent.png`
-  - tile size: `16x16`
-  - spacing: `1`
-  - margin: `0`
-  - columns: `57` (auto-derived from image dimensions)
-- Edit map source in Tiled using `assets/tiled/maps/world.tmj`.
-- Export maps from Tiled as **Lua** to `assets/tiled/maps/world.lua`.
-- Note: `world.lua` is a runtime export and is not meant to be opened directly in Tiled.
-- To run the game from a Tiled map, set in `src/world/map.lua`:
-  - `Map.preferTiled = true`
-- A generated starter map exists at `assets/tiled/maps/world.lua` that recreates a simple version of the current world layout.
-- Tiled loader conventions:
-  - Tile layer named `collision` (or `walls` / `blocked`) marks solid tiles
-  - Other tile layers are rendered in order
-  - Object layers supported: `spawn`, `exit`, `npcs`, `graves`, `pickups`, `enemies`, `warps`, `houses`, `paths`, `barricades`
+- `docs/README.md`: documentation hub and recommended reading order
+- `docs/code-layout.md`: source-tree orientation and module responsibilities
+- `docs/procedural-cave.md`: cave generation flow, tuning, cave autotile notes, and debugging guidance
+- `docs/tiled-workflow.md`: map editing/export workflow, tileset settings, and loader conventions
