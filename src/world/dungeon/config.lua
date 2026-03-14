@@ -5,16 +5,16 @@ local Config = {
   rooms = {
     min = 6,
     max = 10,
-    minW = 4,
+    minW = 5,
     maxW = 9,
-    minH = 4,
+    minH = 5,
     maxH = 7,
-    padding = 1,
+    padding = 2,
     placementAttempts = 120,
   },
 
   corridors = {
-    width = 2,
+    width = 3,
   },
 
   extraConnections = {
@@ -24,12 +24,12 @@ local Config = {
 
   wallThickness = {
     minVertical = 3,
-    minHorizontal = 2,
-    passes = 1,
+    minHorizontal = 3,
+    passes = 2,
   },
 
   cornerSpacing = {
-    minStraightBetweenCorners = 2,
+    minStraightBetweenCorners = 3,
     passes = 12,
   },
 

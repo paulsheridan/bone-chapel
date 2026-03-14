@@ -90,7 +90,7 @@ local function carveVertical(layout, y1, y2, x, width)
 end
 
 local function carveCorridor(layout, a, b, width, rng)
-  local cornerPad = 1
+  local cornerPad = math.ceil(width * 0.75)
   if rng:random() < 0.5 then
     carveHorizontal(layout, a.cx, b.cx, a.cy, width)
     carveVertical(layout, a.cy, b.cy, b.cx, width)
@@ -400,6 +400,124 @@ local function removeShortVerticalEdgeRuns(layout, edgePredicate, requiredRun)
   return violations
 end
 
+local function extendShortHorizontalEdgeRuns(layout, edgePredicate, requiredRun, isTop)
+  local extended = false
+  for y = 2, layout.height - 1 do
+    local x = 2
+    while x <= layout.width - 1 do
+      if edgePredicate(layout, x, y) then
+        local x1 = x
+        while x <= layout.width - 1 and edgePredicate(layout, x, y) do
+          x = x + 1
+        end
+        local x2 = x - 1
+        local runLength = x2 - x1 + 1
+        if runLength < requiredRun then
+          local needed = requiredRun - runLength
+          while needed > 0 do
+            local didExtend = false
+            if x1 > 2 then
+              local canLeft
+              if isTop then
+                canLeft = isBlockedAt(layout, x1 - 1, y) and isBlockedAt(layout, x1 - 1, y - 1) and isWalkableAt(layout, x1 - 1, y + 1)
+              else
+                canLeft = isBlockedAt(layout, x1 - 1, y) and isBlockedAt(layout, x1 - 1, y + 1) and isWalkableAt(layout, x1 - 1, y - 1)
+              end
+              if canLeft then
+                layout.blocked[y][x1 - 1] = true
+                x1 = x1 - 1
+                needed = needed - 1
+                extended = true
+                didExtend = true
+              end
+            end
+            if needed > 0 and x2 < layout.width - 1 then
+              local canRight
+              if isTop then
+                canRight = isBlockedAt(layout, x2 + 1, y) and isBlockedAt(layout, x2 + 1, y - 1) and isWalkableAt(layout, x2 + 1, y + 1)
+              else
+                canRight = isBlockedAt(layout, x2 + 1, y) and isBlockedAt(layout, x2 + 1, y + 1) and isWalkableAt(layout, x2 + 1, y - 1)
+              end
+              if canRight then
+                layout.blocked[y][x2 + 1] = true
+                x2 = x2 + 1
+                needed = needed - 1
+                extended = true
+                didExtend = true
+              end
+            end
+            if not didExtend then
+              break
+            end
+          end
+        end
+      else
+        x = x + 1
+      end
+    end
+  end
+  return extended
+end
+
+local function extendShortVerticalEdgeRuns(layout, edgePredicate, requiredRun, isLeft)
+  local extended = false
+  for x = 2, layout.width - 1 do
+    local y = 2
+    while y <= layout.height - 1 do
+      if edgePredicate(layout, x, y) then
+        local y1 = y
+        while y <= layout.height - 1 and edgePredicate(layout, x, y) do
+          y = y + 1
+        end
+        local y2 = y - 1
+        local runLength = y2 - y1 + 1
+        if runLength < requiredRun then
+          local needed = requiredRun - runLength
+          while needed > 0 do
+            local didExtend = false
+            if y1 > 2 then
+              local canUp
+              if isLeft then
+                canUp = isBlockedAt(layout, x, y1 - 1) and isBlockedAt(layout, x - 1, y1 - 1) and isWalkableAt(layout, x + 1, y1 - 1)
+              else
+                canUp = isBlockedAt(layout, x, y1 - 1) and isBlockedAt(layout, x + 1, y1 - 1) and isWalkableAt(layout, x - 1, y1 - 1)
+              end
+              if canUp then
+                layout.blocked[y1 - 1][x] = true
+                y1 = y1 - 1
+                needed = needed - 1
+                extended = true
+                didExtend = true
+              end
+            end
+            if needed > 0 and y2 < layout.height - 1 then
+              local canDown
+              if isLeft then
+                canDown = isBlockedAt(layout, x, y2 + 1) and isBlockedAt(layout, x - 1, y2 + 1) and isWalkableAt(layout, x + 1, y2 + 1)
+              else
+                canDown = isBlockedAt(layout, x, y2 + 1) and isBlockedAt(layout, x + 1, y2 + 1) and isWalkableAt(layout, x - 1, y2 + 1)
+              end
+              if canDown then
+                layout.blocked[y2 + 1][x] = true
+                y2 = y2 + 1
+                needed = needed - 1
+                extended = true
+                didExtend = true
+              end
+            end
+            if not didExtend then
+              break
+            end
+          end
+        end
+      else
+        y = y + 1
+      end
+    end
+  end
+  return extended
+end
+
 local function enforceMinStraightWalls(layout, rules)
   if type(rules) ~= "table" then
     return 0, 0
@@ -412,6 +530,26 @@ local function enforceMinStraightWalls(layout, rules)
 
   local requiredRun = minStraight + 2
   local allowedViolations = math.max(0, math.floor(rules.allowedViolations or 0))
+  local passes = math.max(1, math.floor(rules.passes or 1))
+
+  for _ = 1, passes do
+    local changed = false
+    if extendShortHorizontalEdgeRuns(layout, isTopEdge, requiredRun, true) then
+      changed = true
+    end
+    if extendShortHorizontalEdgeRuns(layout, isBottomEdge, requiredRun, false) then
+      changed = true
+    end
+    if extendShortVerticalEdgeRuns(layout, isLeftEdge, requiredRun, true) then
+      changed = true
+    end
+    if extendShortVerticalEdgeRuns(layout, isRightEdge, requiredRun, false) then
+      changed = true
+    end
+    if not changed then
+      break
+    end
+  end
 
   local violations = 0
   violations = violations + removeShortHorizontalEdgeRuns(layout, isTopEdge, requiredRun)
