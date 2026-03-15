@@ -172,6 +172,14 @@ local function pickWallTile(context, layout, x, y)
   end
 
   if not floorN and not floorS and not floorW and not floorE then
+    if not floorSS then
+      if floorSSE and not floorSSW and not floorSE then
+        return walls and (walls.outerTopCapLeft or walls.topCapLeft or walls.topCap or context.wallGid) or context.wallGid
+      elseif floorSSW and not floorSSE and not floorSW then
+        return walls and (walls.outerTopCapRight or walls.topCapRight or walls.topCap or context.wallGid) or context.wallGid
+      end
+    end
+
     if floorSW and not floorSE then
       return walls and (walls.right or context.wallGid) or context.wallGid
     elseif floorSE and not floorSW then

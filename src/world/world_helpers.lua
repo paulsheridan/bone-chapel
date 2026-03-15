@@ -104,9 +104,14 @@ end
 function Helpers.addNpc(map, tileToWorld, zx, zy, lx, ly, name, line)
   local tx, ty = Helpers.zoneTile(map, zx, zy, lx, ly)
   local pos = tileToWorld(tx, ty)
+  local npcIndex = #map.npcs + 1
   table.insert(map.npcs, {
     x = pos.x,
     y = pos.y,
+    radius = 11,
+    speed = 72,
+    spriteSet = ((npcIndex - 1) % 2) + 4,
+    spriteFacing = "down",
     name = name,
     line = line,
   })

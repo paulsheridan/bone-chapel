@@ -7,6 +7,111 @@ local Display = require("src.core.display")
 
 local Rendering = {}
 
+local CHARACTER_TILE_W = 16
+local CHARACTER_TILE_H = 16
+local CHARACTER_SPACING = 1
+local CHARACTER_MARGIN = 0
+local CHARACTER_SET_INDEX = 6
+local CHARACTER_SCALE = 2
+local HIDE_UI_OVERLAY_FOR_TESTING = true
+
+local ENEMY_CHARACTER_SET = {
+  brute = 1,
+  hunter = 2,
+  skirmisher = 3,
+}
+
+local characterSheet
+local characterQuadCache
+
+local function initCharacterSheet()
+  if characterSheet then
+    return
+  end
+
+  characterSheet = love.graphics.newImage("assets/Characters.png")
+  characterSheet:setFilter("nearest", "nearest")
+
+  characterQuadCache = {}
+end
+
+local function getCharacterQuads(setIndex)
+  initCharacterSheet()
+  if characterQuadCache[setIndex] then
+    return characterQuadCache[setIndex]
+  end
+
+  local dirColumns = {
+    left = 0,
+    down = 1,
+    up = 2,
+    right = 3,
+  }
+
+  local setStartRow = (setIndex - 1) * 3
+  local quads = {}
+  for dir, col in pairs(dirColumns) do
+    quads[dir] = {}
+    for row = 0, 2 do
+      local x = CHARACTER_MARGIN + col * (CHARACTER_TILE_W + CHARACTER_SPACING)
+      local y = CHARACTER_MARGIN + (setStartRow + row) * (CHARACTER_TILE_H + CHARACTER_SPACING)
+      quads[dir][row + 1] = love.graphics.newQuad(
+        x,
+        y,
+        CHARACTER_TILE_W,
+        CHARACTER_TILE_H,
+        characterSheet:getWidth(),
+        characterSheet:getHeight()
+      )
+    end
+  end
+
+  characterQuadCache[setIndex] = quads
+  return quads
+end
+
+local function drawCharacterSprite(entity, setIndex)
+  local quads = getCharacterQuads(setIndex)
+
+  local dir = entity.spriteFacing or "down"
+  local frame = entity.spriteFrame or 1
+  local dirSet = quads[dir] or quads.down
+  local quad = dirSet[frame] or dirSet[1]
+
+  love.graphics.draw(
+    characterSheet,
+    quad,
+    entity.x,
+    entity.y,
+    0,
+    CHARACTER_SCALE,
+    CHARACTER_SCALE,
+    CHARACTER_TILE_W * 0.5,
+    CHARACTER_TILE_H * 0.5
+  )
+end
+
+local function drawNecromancerSprite(entity)
+  love.graphics.setColor(1, 1, 1, 1)
+  drawCharacterSprite(entity, CHARACTER_SET_INDEX)
+end
+
+local function drawEnemySprite(enemy)
+  local setIndex = ENEMY_CHARACTER_SET[enemy.kind] or 4
+  if enemy.attackWindup and enemy.attackWindup > 0 then
+    love.graphics.setColor(1, 0.9, 0.9, 1)
+  else
+    love.graphics.setColor(1, 1, 1, 1)
+  end
+  drawCharacterSprite(enemy, setIndex)
+end
+
+local function drawFriendlyNpcSprite(npc)
+  local setIndex = npc.spriteSet or 4
+  love.graphics.setColor(1, 1, 1, 1)
+  drawCharacterSprite(npc, setIndex)
+end
+
 local function slotColor(slot)
   if slot == "head" then
     return 0.8, 0.82, 0.76
@@ -108,15 +213,6 @@ local function drawEnemyPaths(game)
   end
 end
 
-local function enemyColor(enemy)
-  if enemy.kind == "brute" then
-    return 0.62, 0.25, 0.2
-  elseif enemy.kind == "hunter" then
-    return 0.72, 0.32, 0.34
-  end
-  return 0.82, 0.46, 0.33
-end
-
 local function drawEnemyTelegraph(enemy)
   if not enemy.attackWindup or enemy.attackWindup <= 0 then
     return
@@ -168,10 +264,18 @@ function Rendering.drawWorld(game)
     Map.draw(game.map)
   end
 
+  for _, npc in ipairs(game.map.npcs or {}) do
+    if npc.alive ~= false then
+      drawEntityShadow(npc)
+      drawFriendlyNpcSprite(npc)
+      love.graphics.setColor(0.94, 0.92, 0.8, 0.95)
+      love.graphics.print("!", npc.x - 2, npc.y - npc.radius - 14)
+    end
+  end
+
   if game.necromancer.alive then
     drawEntityShadow(game.necromancer)
-    love.graphics.setColor(0.52, 0.78, 0.65)
-    love.graphics.circle("fill", game.necromancer.x, game.necromancer.y, game.necromancer.radius)
+    drawNecromancerSprite(game.necromancer)
     Combat.drawWeapon(game.necromancer, game.ui.dig ~= nil)
     drawHealthBar(game.necromancer, 34)
   end
@@ -187,13 +291,7 @@ function Rendering.drawWorld(game)
   for _, enemy in ipairs(game.enemies) do
     if enemy.alive then
       drawEntityShadow(enemy)
-      local r, g, b = enemyColor(enemy)
-      if enemy.attackWindup and enemy.attackWindup > 0 then
-        love.graphics.setColor(math.min(1, r + 0.2), math.min(1, g + 0.2), math.min(1, b + 0.15))
-      else
-        love.graphics.setColor(r, g, b)
-      end
-      love.graphics.circle("fill", enemy.x, enemy.y, enemy.radius)
+      drawEnemySprite(enemy)
       drawEnemyTelegraph(enemy)
       drawHealthBar(enemy, 28)
     end
@@ -217,6 +315,10 @@ end
 function Rendering.drawHUD(game)
   love.graphics.origin()
   local screenW, screenH = Display.getLogicalSize()
+
+  if HIDE_UI_OVERLAY_FOR_TESTING then
+    return
+  end
 
   love.graphics.setColor(0.04, 0.05, 0.06, 0.75)
   love.graphics.rectangle("fill", 12, 12, 420, 154, 10, 10)

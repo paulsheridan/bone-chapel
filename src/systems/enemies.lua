@@ -6,6 +6,48 @@ local Movement = require("src.core.movement")
 
 local Enemies = {}
 
+local WALK_SEQUENCE = { 1, 2, 1, 3 }
+local WALK_FRAME_TIME = 0.14
+
+local function facingFromVector(x, y, fallback)
+  if math.abs(x) < 0.0001 and math.abs(y) < 0.0001 then
+    return fallback or "down"
+  end
+  if math.abs(x) >= math.abs(y) then
+    if x < 0 then
+      return "left"
+    end
+    return "right"
+  end
+  if y < 0 then
+    return "up"
+  end
+  return "down"
+end
+
+local function updateEnemySpriteState(enemy, dt, moveX, moveY)
+  enemy.spriteFacing = enemy.spriteFacing or facingFromVector(enemy.lookX or 0, enemy.lookY or 1, "down")
+  enemy.spriteAnimStep = enemy.spriteAnimStep or 1
+  enemy.spriteAnimTimer = enemy.spriteAnimTimer or 0
+
+  local moving = math.abs(moveX) > 0.01 or math.abs(moveY) > 0.01
+  if moving then
+    enemy.spriteFacing = facingFromVector(moveX, moveY, enemy.spriteFacing)
+    enemy.spriteAnimTimer = enemy.spriteAnimTimer + dt
+    while enemy.spriteAnimTimer >= WALK_FRAME_TIME do
+      enemy.spriteAnimTimer = enemy.spriteAnimTimer - WALK_FRAME_TIME
+      enemy.spriteAnimStep = (enemy.spriteAnimStep % #WALK_SEQUENCE) + 1
+    end
+  else
+    enemy.spriteFacing = facingFromVector(enemy.lookX or 0, enemy.lookY or 1, enemy.spriteFacing)
+    enemy.spriteAnimStep = 1
+    enemy.spriteAnimTimer = 0
+  end
+
+  enemy.spriteMoving = moving
+  enemy.spriteFrame = WALK_SEQUENCE[enemy.spriteAnimStep]
+end
+
 local archetypes = {
   brute = {
     speed = 76,
@@ -205,6 +247,7 @@ end
 function Enemies.updateAll(game, dt)
   for _, enemy in ipairs(game.enemies) do
     if enemy.alive then
+      local prevX, prevY = enemy.x, enemy.y
       enemy.attackCooldown = math.max(0, enemy.attackCooldown - dt)
       enemy.repathTimer = math.max(0, enemy.repathTimer - dt)
 
@@ -342,6 +385,8 @@ function Enemies.updateAll(game, dt)
             end
           end
         end
+
+        updateEnemySpriteState(enemy, dt, enemy.x - prevX, enemy.y - prevY)
       end
     end
   end

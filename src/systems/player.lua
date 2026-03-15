@@ -2,6 +2,9 @@ local Math2D = require("src.core.math2d")
 
 local Player = {}
 
+local WALK_SEQUENCE = { 1, 2, 1, 3 }
+local WALK_FRAME_TIME = 0.14
+
 local function deadzone(v, dz)
   if math.abs(v) < dz then
     return 0
@@ -63,7 +66,14 @@ function Player.updateControl(game, entity, dt, moveWithCollisions, attackFn, zo
     return
   end
 
+  entity.spriteFacing = entity.spriteFacing or "down"
+  entity.spriteAnimStep = entity.spriteAnimStep or 1
+  entity.spriteAnimTimer = entity.spriteAnimTimer or 0
+
   if (entity.hitStun or 0) > 0 then
+    entity.spriteMoving = false
+    entity.spriteAnimStep = 1
+    entity.spriteAnimTimer = 0
     zoneTransitionFn(game, entity)
     return
   end
@@ -88,9 +98,34 @@ function Player.updateControl(game, entity, dt, moveWithCollisions, attackFn, zo
 
   if math.abs(rawX) > 0.12 or math.abs(rawY) > 0.12 then
     entity.facingX, entity.facingY = Math2D.normalize(rawX, rawY)
+
+    if math.abs(rawX) > 0.12 then
+      if rawX < 0 then
+        entity.spriteFacing = "left"
+      else
+        entity.spriteFacing = "right"
+      end
+    elseif rawY < 0 then
+      entity.spriteFacing = "up"
+    else
+      entity.spriteFacing = "down"
+    end
   end
 
   local mx, my = Math2D.normalize(rawX, rawY)
+  entity.spriteMoving = (mx ~= 0 or my ~= 0)
+  if entity.spriteMoving then
+    entity.spriteAnimTimer = entity.spriteAnimTimer + dt
+    while entity.spriteAnimTimer >= WALK_FRAME_TIME do
+      entity.spriteAnimTimer = entity.spriteAnimTimer - WALK_FRAME_TIME
+      entity.spriteAnimStep = (entity.spriteAnimStep % #WALK_SEQUENCE) + 1
+    end
+  else
+    entity.spriteAnimStep = 1
+    entity.spriteAnimTimer = 0
+  end
+
+  entity.spriteFrame = WALK_SEQUENCE[entity.spriteAnimStep]
   moveWithCollisions(game, entity, mx * entity.speed * dt, my * entity.speed * dt)
 
   if love.keyboard.isDown("k") or padHeavy then

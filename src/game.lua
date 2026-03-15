@@ -11,6 +11,7 @@ local Camera = require("src.systems.camera")
 local Combat = require("src.systems.combat")
 local Enemies = require("src.systems.enemies")
 local Interactions = require("src.systems.interactions")
+local Npcs = require("src.systems.npcs")
 local Player = require("src.systems.player")
 local Rendering = require("src.systems.rendering")
 
@@ -745,6 +746,7 @@ function Game.update(dt)
 
   Interactions.updateDigging(Game, dt)
   Interactions.updateWarpTouch(Game, dt)
+  Npcs.updateAll(Game, dt)
 
   Enemies.updateAll(Game, dt)
 

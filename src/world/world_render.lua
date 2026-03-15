@@ -59,13 +59,6 @@ function Render.draw(map, tileSize, tileToWorld, getZoneBoundsPixels)
     end
   end
 
-  for _, npc in ipairs(map.npcs) do
-    love.graphics.setColor(0.82, 0.83, 0.68)
-    love.graphics.circle("fill", npc.x, npc.y, 10)
-    love.graphics.setColor(0.16, 0.2, 0.18)
-    love.graphics.print("!", npc.x - 3, npc.y - 8)
-  end
-
   for _, warp in ipairs(map.warps) do
     if warp.kind == "door" then
       local w, h = 16, 20
