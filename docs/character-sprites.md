@@ -3,6 +3,7 @@
 This project now uses `assets/Characters.png` for animated character sprites for:
 
 - player (necromancer)
+- assembled monster
 - enemy variants (`brute`, `hunter`, `skirmisher`)
 - friendly NPCs
 
@@ -37,7 +38,8 @@ Key details:
 
 Current set mapping:
 
-- Player (necromancer): set `6` (bottom set)
+- Player (necromancer): set `6`
+- Monster (assembled body): set `5` (reuses existing sheet set)
 - Enemies:
   - `brute` -> set `1`
   - `hunter` -> set `2`

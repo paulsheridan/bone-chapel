@@ -1,6 +1,23 @@
 local Config = {
   enabled = true,
-  maxAttempts = 20,
+  maxAttempts = 100,
+
+  macro = {
+    enabled = true,
+    targetAreas = 12,
+    variance = 3,
+    minAreas = 8,
+    maxAreas = 16,
+    branchChance = 0.45,
+    loopChance = 0.2,
+    connectorWidth = 3,
+    allowedZoneRect = {
+      x1 = 5,
+      y1 = 1,
+      x2 = 8,
+      y2 = 6,
+    },
+  },
 
   rooms = {
     min = 6,
@@ -29,17 +46,21 @@ local Config = {
   },
 
   cornerSpacing = {
-    minStraightBetweenCorners = 3,
+    minStraightBetweenCorners = 2,
+    allowedViolations = 1,
     passes = 12,
+    allowRelaxedFallback = true,
   },
 
   entrySafeRadius = 3,
   minFloorTiles = 120,
+  minFloorTilesPerArea = 110,
 
   enemies = {
-    min = 3,
-    max = 6,
+    min = 8,
+    max = 20,
     scalePerRoom = 0.55,
+    scalePerArea = 0.25,
     variance = 1,
     minEntryDistance = 8,
     minPickupDistance = 5,

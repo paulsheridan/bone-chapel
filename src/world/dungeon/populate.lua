@@ -52,8 +52,15 @@ local function pickTile(candidates, rng, occupied, minDistFrom, minDistValue)
 end
 
 local function localToSpawn(context, tile)
-  local tx = context.tx1 + tile.x - 1
-  local ty = context.ty1 + tile.y - 1
+  local tx
+  local ty
+  if context.globalLayout then
+    tx = tile.x
+    ty = tile.y
+  else
+    tx = context.tx1 + tile.x - 1
+    ty = context.ty1 + tile.y - 1
+  end
   local pos = context.tileToWorld(tx, ty)
   return {
     x = tile.x,
@@ -120,7 +127,9 @@ function Populate.generate(context, layout, rng, config)
   end
 
   local roomCount = #layout.rooms
-  local baseEnemyCount = math.floor(roomCount * (config.enemies.scalePerRoom or 0.55) + 0.5)
+  local areaCount = math.max(1, math.floor(layout.areaCount or 1))
+  local perAreaBonus = ((config.enemies and config.enemies.scalePerArea) or 0)
+  local baseEnemyCount = math.floor(roomCount * (config.enemies.scalePerRoom or 0.55) + areaCount * perAreaBonus + 0.5)
   local variance = config.enemies.variance or 1
   local enemyCount = baseEnemyCount + rng:random(-variance, variance)
   enemyCount = math.max(config.enemies.min, math.min(config.enemies.max, enemyCount))

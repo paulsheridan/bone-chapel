@@ -190,7 +190,225 @@ local function carveEntryBubble(layout, entry, radius)
   carveRect(layout, entry.x - radius, entry.y - radius, entry.x + radius, entry.y + radius)
 end
 
-local function sealPerimeter(layout)
+local function randomRoomPlacement(layout, rooms, rng, config)
+  local targetRooms = rng:random(config.rooms.min, config.rooms.max)
+  local tries = 0
+  while #rooms < targetRooms and tries < config.rooms.placementAttempts do
+    tries = tries + 1
+    local w = rng:random(config.rooms.minW, config.rooms.maxW)
+    local h = rng:random(config.rooms.minH, config.rooms.maxH)
+    local x = rng:random(2, math.max(2, layout.width - w))
+    local y = rng:random(2, math.max(2, layout.height - h))
+    addRoom(layout, rooms, x, y, w, h, config.rooms.padding)
+  end
+end
+
+local sealPerimeter
+local enforceWallThickness
+local enforceMinStraightWalls
+
+local function generateArea(width, height, rng, config, entryLocal)
+  local area = {
+    width = width,
+    height = height,
+    blocked = makeGrid(width, height, true),
+    rooms = {},
+    entry = nil,
+  }
+
+  local firstW = rng:random(config.rooms.minW, config.rooms.maxW)
+  local firstH = rng:random(config.rooms.minH, config.rooms.maxH)
+
+  local firstX
+  local firstY
+  if entryLocal and entryLocal.x and entryLocal.y then
+    local ex = math.max(2, math.min(width - 1, math.floor(entryLocal.x)))
+    local ey = math.max(2, math.min(height - 1, math.floor(entryLocal.y)))
+    firstX = math.max(2, math.min(width - firstW, ex - math.floor(firstW * 0.5)))
+    firstY = math.max(2, math.min(height - firstH, ey - math.floor(firstH * 0.5)))
+    area.entry = { x = ex, y = ey }
+  else
+    firstX = rng:random(2, math.max(2, width - firstW))
+    firstY = rng:random(2, math.max(2, height - firstH))
+  end
+
+  addRoom(area, area.rooms, firstX, firstY, firstW, firstH, config.rooms.padding)
+  randomRoomPlacement(area, area.rooms, rng, config)
+
+  local edges = buildMST(area.rooms)
+  addExtraConnections(edges, area.rooms, rng, config.extraConnections.min, config.extraConnections.max)
+  for _, edge in ipairs(edges) do
+    local a = area.rooms[edge.a]
+    local b = area.rooms[edge.b]
+    carveCorridor(area, a, b, config.corridors.width, rng)
+  end
+
+  if area.entry then
+    carveEntryBubble(area, area.entry, config.entrySafeRadius)
+  end
+
+  enforceWallThickness(area, config.wallThickness)
+  sealPerimeter(area)
+  if area.entry then
+    carveTile(area, area.entry.x, area.entry.y)
+  end
+  local cornerViolations, cornerAllowed = enforceMinStraightWalls(area, config.cornerSpacing)
+  area.cornerSpacingViolations = cornerViolations
+  area.cornerSpacingAllowedViolations = cornerAllowed
+  area.cornerSpacingPassed = cornerViolations <= cornerAllowed
+  if area.entry then
+    carveTile(area, area.entry.x, area.entry.y)
+  end
+
+  return area
+end
+
+local function zoneKey(zx, zy)
+  return zx .. ":" .. zy
+end
+
+local function carveHorizontalConnector(layout, x1, x2, y, width)
+  carveHorizontal(layout, x1, x2, y, width)
+end
+
+local function carveVerticalConnector(layout, y1, y2, x, width)
+  carveVertical(layout, y1, y2, x, width)
+end
+
+function Generator.generateComposite(context, macro, rng, config)
+  if not macro or not macro.zones or #macro.zones == 0 then
+    return nil
+  end
+
+  local map = context.map
+  local zoneW = context.zoneWidth
+  local zoneH = context.zoneHeight
+  local layout = {
+    width = map.width,
+    height = map.height,
+    blocked = makeGrid(map.width, map.height, true),
+    rooms = {},
+    entry = {
+      x = context.entryTile.tx,
+      y = context.entryTile.ty,
+    },
+    generatedZoneSet = {},
+    generatedZones = macro.zones,
+    macroEdges = macro.edges,
+    areaCount = macro.areaCount,
+  }
+
+  local zoneCenters = {}
+
+  for _, zone in ipairs(macro.zones) do
+    local key = zoneKey(zone.zx, zone.zy)
+    layout.generatedZoneSet[key] = true
+
+    local tx1 = (zone.zx - 1) * zoneW + 1
+    local ty1 = (zone.zy - 1) * zoneH + 1
+
+    local entryLocal = nil
+    if zone.zx == context.anchorZoneX and zone.zy == context.anchorZoneY then
+      entryLocal = {
+        x = context.entryLocal.x,
+        y = context.entryLocal.y,
+      }
+    end
+
+    local area = generateArea(zoneW, zoneH, rng, config, entryLocal)
+    local sx = 0
+    local sy = 0
+    for _, room in ipairs(area.rooms) do
+      local gcx = tx1 + room.cx - 1
+      local gcy = ty1 + room.cy - 1
+      sx = sx + gcx
+      sy = sy + gcy
+      table.insert(layout.rooms, {
+        x1 = tx1 + room.x1 - 1,
+        y1 = ty1 + room.y1 - 1,
+        x2 = tx1 + room.x2 - 1,
+        y2 = ty1 + room.y2 - 1,
+        cx = gcx,
+        cy = gcy,
+      })
+    end
+
+    if #area.rooms > 0 then
+      zoneCenters[key] = {
+        x = math.floor(sx / #area.rooms + 0.5),
+        y = math.floor(sy / #area.rooms + 0.5),
+      }
+    else
+      zoneCenters[key] = {
+        x = tx1 + math.floor(zoneW * 0.5),
+        y = ty1 + math.floor(zoneH * 0.5),
+      }
+    end
+
+    for ly = 1, zoneH do
+      local gy = ty1 + ly - 1
+      for lx = 1, zoneW do
+        local gx = tx1 + lx - 1
+        if not area.blocked[ly][lx] then
+          layout.blocked[gy][gx] = false
+        end
+      end
+    end
+  end
+
+  local connectorWidth = math.max(1, math.floor((config.macro and config.macro.connectorWidth) or config.corridors.width or 1))
+  local connectorHalf = math.floor((connectorWidth - 1) * 0.5)
+
+  for _, edge in ipairs(macro.edges or {}) do
+    local a = macro.zones[edge.a]
+    local b = macro.zones[edge.b]
+    if a and b then
+      local aKey = zoneKey(a.zx, a.zy)
+      local bKey = zoneKey(b.zx, b.zy)
+      local aCenter = zoneCenters[aKey]
+      local bCenter = zoneCenters[bKey]
+      if aCenter and bCenter then
+        if a.zy == b.zy and math.abs(a.zx - b.zx) == 1 then
+          local left = (a.zx < b.zx) and a or b
+          local right = (left == a) and b or a
+          local seamX = left.zx * zoneW
+          local rowTop = (left.zy - 1) * zoneH + 1
+          local localY = math.max(3, math.min(zoneH - 2, math.floor(zoneH * 0.5) + rng:random(-3, 3)))
+          local gy = rowTop + localY - 1
+          carveRect(layout, seamX - connectorHalf, gy - connectorHalf, seamX + 1 + connectorHalf, gy + connectorHalf)
+          carveHorizontalConnector(layout, aCenter.x, seamX, gy, connectorWidth)
+          carveHorizontalConnector(layout, seamX + 1, bCenter.x, gy, connectorWidth)
+        elseif a.zx == b.zx and math.abs(a.zy - b.zy) == 1 then
+          local top = (a.zy < b.zy) and a or b
+          local bottom = (top == a) and b or a
+          local seamY = top.zy * zoneH
+          local colLeft = (top.zx - 1) * zoneW + 1
+          local localX = math.max(3, math.min(zoneW - 2, math.floor(zoneW * 0.5) + rng:random(-4, 4)))
+          local gx = colLeft + localX - 1
+          carveRect(layout, gx - connectorHalf, seamY - connectorHalf, gx + connectorHalf, seamY + 1 + connectorHalf)
+          carveVerticalConnector(layout, aCenter.y, seamY, gx, connectorWidth)
+          carveVerticalConnector(layout, seamY + 1, bCenter.y, gx, connectorWidth)
+        end
+      end
+    end
+  end
+
+  enforceWallThickness(layout, config.wallThickness)
+  carveTile(layout, layout.entry.x, layout.entry.y)
+  local cornerViolations, cornerAllowed = enforceMinStraightWalls(layout, config.cornerSpacing)
+  layout.cornerSpacingViolations = cornerViolations
+  layout.cornerSpacingAllowedViolations = cornerAllowed
+  layout.cornerSpacingPassed = cornerViolations <= cornerAllowed
+  carveTile(layout, layout.entry.x, layout.entry.y)
+
+  return layout
+end
+
+function Generator.generateArea(width, height, rng, config, entryLocal)
+  return generateArea(width, height, rng, config, entryLocal)
+end
+
+sealPerimeter = function(layout)
   for x = 1, layout.width do
     layout.blocked[1][x] = true
     layout.blocked[layout.height][x] = true
@@ -305,7 +523,7 @@ local function enforceHorizontalWallThickness(layout, minThickness)
   return changed
 end
 
-local function enforceWallThickness(layout, rules)
+enforceWallThickness = function(layout, rules)
   if type(rules) ~= "table" then
     return
   end
@@ -356,7 +574,7 @@ local function isRightEdge(layout, x, y)
   return isBlockedAt(layout, x, y) and isWalkableAt(layout, x - 1, y) and not isWalkableAt(layout, x + 1, y)
 end
 
-local function removeShortHorizontalEdgeRuns(layout, edgePredicate, requiredRun)
+local function countShortHorizontalEdgeRuns(layout, edgePredicate, requiredRun)
   local violations = 0
   for y = 2, layout.height - 1 do
     local x = 2
@@ -378,7 +596,7 @@ local function removeShortHorizontalEdgeRuns(layout, edgePredicate, requiredRun)
   return violations
 end
 
-local function removeShortVerticalEdgeRuns(layout, edgePredicate, requiredRun)
+local function countShortVerticalEdgeRuns(layout, edgePredicate, requiredRun)
   local violations = 0
   for x = 2, layout.width - 1 do
     local y = 2
@@ -400,6 +618,71 @@ local function removeShortVerticalEdgeRuns(layout, edgePredicate, requiredRun)
   return violations
 end
 
+local function fillWalkableAsWall(layout, x, y)
+  if x < 1 or y < 1 or x > layout.width or y > layout.height then
+    return false
+  end
+  if layout.blocked[y][x] then
+    return false
+  end
+  layout.blocked[y][x] = true
+  return true
+end
+
+local function repairShortHorizontalEdgeRuns(layout, edgePredicate, requiredRun, isTop)
+  local repaired = false
+  for y = 2, layout.height - 1 do
+    local x = 2
+    while x <= layout.width - 1 do
+      if edgePredicate(layout, x, y) then
+        local x1 = x
+        while x <= layout.width - 1 and edgePredicate(layout, x, y) do
+          x = x + 1
+        end
+        local x2 = x - 1
+        if (x2 - x1 + 1) < requiredRun then
+          local targetY = isTop and (y + 1) or (y - 1)
+          for rx = x1, x2 do
+            if fillWalkableAsWall(layout, rx, targetY) then
+              repaired = true
+            end
+          end
+        end
+      else
+        x = x + 1
+      end
+    end
+  end
+  return repaired
+end
+
+local function repairShortVerticalEdgeRuns(layout, edgePredicate, requiredRun, isLeft)
+  local repaired = false
+  for x = 2, layout.width - 1 do
+    local y = 2
+    while y <= layout.height - 1 do
+      if edgePredicate(layout, x, y) then
+        local y1 = y
+        while y <= layout.height - 1 and edgePredicate(layout, x, y) do
+          y = y + 1
+        end
+        local y2 = y - 1
+        if (y2 - y1 + 1) < requiredRun then
+          local targetX = isLeft and (x + 1) or (x - 1)
+          for ry = y1, y2 do
+            if fillWalkableAsWall(layout, targetX, ry) then
+              repaired = true
+            end
+          end
+        end
+      else
+        y = y + 1
+      end
+    end
+  end
+  return repaired
+end
+
 local function extendShortHorizontalEdgeRuns(layout, edgePredicate, requiredRun, isTop)
   local extended = false
   for y = 2, layout.height - 1 do
@@ -419,9 +702,13 @@ local function extendShortHorizontalEdgeRuns(layout, edgePredicate, requiredRun,
             if x1 > 2 then
               local canLeft
               if isTop then
-                canLeft = isBlockedAt(layout, x1 - 1, y) and isBlockedAt(layout, x1 - 1, y - 1) and isWalkableAt(layout, x1 - 1, y + 1)
+                canLeft = isWalkableAt(layout, x1 - 1, y)
+                  and isBlockedAt(layout, x1 - 1, y - 1)
+                  and isWalkableAt(layout, x1 - 1, y + 1)
               else
-                canLeft = isBlockedAt(layout, x1 - 1, y) and isBlockedAt(layout, x1 - 1, y + 1) and isWalkableAt(layout, x1 - 1, y - 1)
+                canLeft = isWalkableAt(layout, x1 - 1, y)
+                  and isBlockedAt(layout, x1 - 1, y + 1)
+                  and isWalkableAt(layout, x1 - 1, y - 1)
               end
               if canLeft then
                 layout.blocked[y][x1 - 1] = true
@@ -434,9 +721,13 @@ local function extendShortHorizontalEdgeRuns(layout, edgePredicate, requiredRun,
             if needed > 0 and x2 < layout.width - 1 then
               local canRight
               if isTop then
-                canRight = isBlockedAt(layout, x2 + 1, y) and isBlockedAt(layout, x2 + 1, y - 1) and isWalkableAt(layout, x2 + 1, y + 1)
+                canRight = isWalkableAt(layout, x2 + 1, y)
+                  and isBlockedAt(layout, x2 + 1, y - 1)
+                  and isWalkableAt(layout, x2 + 1, y + 1)
               else
-                canRight = isBlockedAt(layout, x2 + 1, y) and isBlockedAt(layout, x2 + 1, y + 1) and isWalkableAt(layout, x2 + 1, y - 1)
+                canRight = isWalkableAt(layout, x2 + 1, y)
+                  and isBlockedAt(layout, x2 + 1, y + 1)
+                  and isWalkableAt(layout, x2 + 1, y - 1)
               end
               if canRight then
                 layout.blocked[y][x2 + 1] = true
@@ -478,9 +769,13 @@ local function extendShortVerticalEdgeRuns(layout, edgePredicate, requiredRun, i
             if y1 > 2 then
               local canUp
               if isLeft then
-                canUp = isBlockedAt(layout, x, y1 - 1) and isBlockedAt(layout, x - 1, y1 - 1) and isWalkableAt(layout, x + 1, y1 - 1)
+                canUp = isWalkableAt(layout, x, y1 - 1)
+                  and isBlockedAt(layout, x - 1, y1 - 1)
+                  and isWalkableAt(layout, x + 1, y1 - 1)
               else
-                canUp = isBlockedAt(layout, x, y1 - 1) and isBlockedAt(layout, x + 1, y1 - 1) and isWalkableAt(layout, x - 1, y1 - 1)
+                canUp = isWalkableAt(layout, x, y1 - 1)
+                  and isBlockedAt(layout, x + 1, y1 - 1)
+                  and isWalkableAt(layout, x - 1, y1 - 1)
               end
               if canUp then
                 layout.blocked[y1 - 1][x] = true
@@ -493,9 +788,13 @@ local function extendShortVerticalEdgeRuns(layout, edgePredicate, requiredRun, i
             if needed > 0 and y2 < layout.height - 1 then
               local canDown
               if isLeft then
-                canDown = isBlockedAt(layout, x, y2 + 1) and isBlockedAt(layout, x - 1, y2 + 1) and isWalkableAt(layout, x + 1, y2 + 1)
+                canDown = isWalkableAt(layout, x, y2 + 1)
+                  and isBlockedAt(layout, x - 1, y2 + 1)
+                  and isWalkableAt(layout, x + 1, y2 + 1)
               else
-                canDown = isBlockedAt(layout, x, y2 + 1) and isBlockedAt(layout, x + 1, y2 + 1) and isWalkableAt(layout, x - 1, y2 + 1)
+                canDown = isWalkableAt(layout, x, y2 + 1)
+                  and isBlockedAt(layout, x + 1, y2 + 1)
+                  and isWalkableAt(layout, x - 1, y2 + 1)
               end
               if canDown then
                 layout.blocked[y2 + 1][x] = true
@@ -518,7 +817,7 @@ local function extendShortVerticalEdgeRuns(layout, edgePredicate, requiredRun, i
   return extended
 end
 
-local function enforceMinStraightWalls(layout, rules)
+enforceMinStraightWalls = function(layout, rules)
   if type(rules) ~= "table" then
     return 0, 0
   end
@@ -552,63 +851,25 @@ local function enforceMinStraightWalls(layout, rules)
   end
 
   local violations = 0
-  violations = violations + removeShortHorizontalEdgeRuns(layout, isTopEdge, requiredRun)
-  violations = violations + removeShortHorizontalEdgeRuns(layout, isBottomEdge, requiredRun)
-  violations = violations + removeShortVerticalEdgeRuns(layout, isLeftEdge, requiredRun)
-  violations = violations + removeShortVerticalEdgeRuns(layout, isRightEdge, requiredRun)
+  violations = violations + countShortHorizontalEdgeRuns(layout, isTopEdge, requiredRun)
+  violations = violations + countShortHorizontalEdgeRuns(layout, isBottomEdge, requiredRun)
+  violations = violations + countShortVerticalEdgeRuns(layout, isLeftEdge, requiredRun)
+  violations = violations + countShortVerticalEdgeRuns(layout, isRightEdge, requiredRun)
 
   return violations, allowedViolations
 end
 
 function Generator.generate(context, rng, config)
-  local layout = {
-    width = context.zoneWidth,
-    height = context.zoneHeight,
-    blocked = makeGrid(context.zoneWidth, context.zoneHeight, true),
-    rooms = {},
-    entry = {
+  return generateArea(
+    context.zoneWidth,
+    context.zoneHeight,
+    rng,
+    config,
+    {
       x = context.entryLocal.x,
       y = context.entryLocal.y,
-    },
-  }
-
-  local firstW = rng:random(config.rooms.minW, config.rooms.maxW)
-  local firstH = rng:random(config.rooms.minH, config.rooms.maxH)
-  local firstX = math.max(2, math.min(layout.width - firstW, layout.entry.x - math.floor(firstW * 0.5)))
-  local firstY = math.max(2, math.min(layout.height - firstH, layout.entry.y - math.floor(firstH * 0.5)))
-  addRoom(layout, layout.rooms, firstX, firstY, firstW, firstH, config.rooms.padding)
-
-  local targetRooms = rng:random(config.rooms.min, config.rooms.max)
-  local tries = 0
-  while #layout.rooms < targetRooms and tries < config.rooms.placementAttempts do
-    tries = tries + 1
-    local w = rng:random(config.rooms.minW, config.rooms.maxW)
-    local h = rng:random(config.rooms.minH, config.rooms.maxH)
-    local x = rng:random(2, math.max(2, layout.width - w))
-    local y = rng:random(2, math.max(2, layout.height - h))
-    addRoom(layout, layout.rooms, x, y, w, h, config.rooms.padding)
-  end
-
-  local edges = buildMST(layout.rooms)
-  addExtraConnections(edges, layout.rooms, rng, config.extraConnections.min, config.extraConnections.max)
-
-  for _, edge in ipairs(edges) do
-    local a = layout.rooms[edge.a]
-    local b = layout.rooms[edge.b]
-    carveCorridor(layout, a, b, config.corridors.width, rng)
-  end
-
-  carveEntryBubble(layout, layout.entry, config.entrySafeRadius)
-  enforceWallThickness(layout, config.wallThickness)
-  sealPerimeter(layout)
-  carveTile(layout, layout.entry.x, layout.entry.y)
-  local cornerViolations, cornerAllowed = enforceMinStraightWalls(layout, config.cornerSpacing)
-  layout.cornerSpacingViolations = cornerViolations
-  layout.cornerSpacingAllowedViolations = cornerAllowed
-  layout.cornerSpacingPassed = cornerViolations <= cornerAllowed
-  carveTile(layout, layout.entry.x, layout.entry.y)
-
-  return layout
+    }
+  )
 end
 
 return Generator

@@ -1,4 +1,5 @@
 local Apply = {}
+local WallRules = require("src.world.dungeon.wall_rules")
 
 local function findTileLayerByName(runtime, name)
   local lname = string.lower(name)
@@ -44,7 +45,10 @@ end
 
 local function inZone(context, x, y)
   local zx, zy = context.getZoneForWorld(context.map, x, y)
-  return zx == context.zoneX and zy == context.zoneY
+  if context.generatedZoneSet then
+    return context.generatedZoneSet[zx .. ":" .. zy] == true
+  end
+  return zx == context.anchorZoneX and zy == context.anchorZoneY
 end
 
 local function isWalkable(layout, x, y)
@@ -134,121 +138,14 @@ local function pickWalkableTile(context, layout, x, y)
     end
   end
 
-  return pickSparseVariant(walkableFloors, x, y, context.floorGid, 7, 3)
+  return pickSparseVariant(walkableFloors, x, y, context.floorGid, 2, 0)
 end
 
 local function pickWallTile(context, layout, x, y)
-  local theme = context.tileTheme
-  local walls = theme and theme.walls or nil
-  local innerOverrides = theme and theme.innerCornerOverrides or nil
-  local useInnerTopLeft = innerOverrides and innerOverrides.topLeft
-  local useInnerTopRight = innerOverrides and innerOverrides.topRight
-  local useInnerBottomLeft = innerOverrides and innerOverrides.bottomLeft
-  local useInnerBottomRight = innerOverrides and innerOverrides.bottomRight
-  local outerTopLeft = walls and (walls.outerTopLeft or walls.topLeft) or nil
-  local outerTopRight = walls and (walls.outerTopRight or walls.topRight) or nil
-  local outerBottomLeft = walls and (walls.outerBottomLeft or walls.bottomLeft) or nil
-  local outerBottomRight = walls and (walls.outerBottomRight or walls.bottomRight) or nil
-  local floorN = isWalkable(layout, x, y - 1)
-  local floorS = isWalkable(layout, x, y + 1)
-  local floorW = isWalkable(layout, x - 1, y)
-  local floorE = isWalkable(layout, x + 1, y)
-  local floorNN = isWalkable(layout, x, y - 2)
-  local floorSS = isWalkable(layout, x, y + 2)
-  local floorSSW = isWalkable(layout, x - 1, y + 2)
-  local floorSSE = isWalkable(layout, x + 1, y + 2)
-  local floorNW = isWalkable(layout, x - 1, y - 1)
-  local floorNE = isWalkable(layout, x + 1, y - 1)
-  local floorSW = isWalkable(layout, x - 1, y + 1)
-  local floorSE = isWalkable(layout, x + 1, y + 1)
-
-  if not floorS and floorSS then
-    if floorW and not floorE then
-      return walls and (walls.topCapRight or walls.topCap) or context.wallGid
-    elseif floorE and not floorW then
-      return walls and (walls.topCapLeft or walls.topCap) or context.wallGid
-    end
-    return walls and (walls.topCap or walls.top) or context.wallGid
-  end
-
-  if not floorN and not floorS and not floorW and not floorE then
-    if not floorSS then
-      if floorSSE and not floorSSW and not floorSE then
-        return walls and (walls.outerTopCapLeft or walls.topCapLeft or walls.topCap or context.wallGid) or context.wallGid
-      elseif floorSSW and not floorSSE and not floorSW then
-        return walls and (walls.outerTopCapRight or walls.topCapRight or walls.topCap or context.wallGid) or context.wallGid
-      end
-    end
-
-    if floorSW and not floorSE then
-      return walls and (walls.right or context.wallGid) or context.wallGid
-    elseif floorSE and not floorSW then
-      return walls and (walls.left or context.wallGid) or context.wallGid
-    elseif floorNW and not floorNE then
-      return outerBottomRight or (walls and (walls.bottom or context.wallGid)) or context.wallGid
-    elseif floorNE and not floorNW then
-      return outerBottomLeft or (walls and (walls.bottom or context.wallGid)) or context.wallGid
-    elseif floorNN and not floorSS then
-      if floorSSE and not floorSSW then
-        if useInnerTopLeft then
-          return walls and (walls.innerTopLeft or walls.outerTopCapLeft or outerTopLeft or walls.top or context.wallGid)
-            or context.wallGid
-        end
-        return walls and (walls.outerTopCapLeft or outerTopLeft or walls.top or context.wallGid) or context.wallGid
-      elseif floorSSW and not floorSSE then
-        if useInnerTopRight then
-          return walls and (walls.innerTopRight or walls.outerTopCapRight or outerTopRight or walls.top or context.wallGid)
-            or context.wallGid
-        end
-        return walls and (walls.outerTopCapRight or outerTopRight or walls.top or context.wallGid) or context.wallGid
-      end
-    end
-    return pickSparseVariant(theme and theme.unwalkableFloors, x, y, context.wallGid, 6, 0)
-  end
-
-  if not walls then
-    return context.wallGid
-  end
-
-  if floorS and floorE and not floorN and not floorW then
-    return outerTopLeft or walls.top or context.wallGid
-  elseif floorS and floorW and not floorN and not floorE then
-    return outerTopRight or walls.top or context.wallGid
-  elseif floorN and floorE and not floorS and not floorW then
-    if useInnerBottomLeft then
-      return walls.innerBottomLeft or outerBottomLeft or walls.bottom or context.wallGid
-    end
-    return outerBottomLeft or walls.bottom or context.wallGid
-  elseif floorN and floorW and not floorS and not floorE then
-    if useInnerBottomRight then
-      return walls.innerBottomRight or outerBottomRight or walls.bottom or context.wallGid
-    end
-    return outerBottomRight or walls.bottom or context.wallGid
-  end
-
-  if floorS and floorE and floorW and not floorN and not floorSE then
-    return walls.innerTopLeft or walls.top or context.wallGid
-  elseif floorS and floorE and floorW and not floorN and not floorSW then
-    return walls.innerTopRight or walls.top or context.wallGid
-  elseif floorN and floorE and floorW and not floorS and not floorNE then
-    return walls.innerBottomLeft or walls.bottom or context.wallGid
-  elseif floorN and floorE and floorW and not floorS and not floorNW then
-    return walls.innerBottomRight or walls.bottom or context.wallGid
-  end
-
-  if floorS and not floorN then
-    return walls.top or context.wallGid
-  elseif floorN and not floorS then
-    return walls.bottom or context.wallGid
-  elseif floorE and not floorW then
-    return walls.left or context.wallGid
-  elseif floorW and not floorE then
-    return walls.right or context.wallGid
-  elseif floorE or floorW then
-    return walls.left or context.wallGid
-  end
-
-  return walls.top or context.wallGid
+  local wallGid = WallRules.pick(context.tileTheme, function(wx, wy)
+    return isWalkable(layout, wx, wy)
+  end, x, y, context.wallGid)
+  return wallGid
 end
 
 function Apply.resolveContext(map, helpers, tileTheme)
@@ -320,8 +217,8 @@ function Apply.resolveContext(map, helpers, tileTheme)
 
   return {
     map = map,
-    zoneX = zoneX,
-    zoneY = zoneY,
+    anchorZoneX = zoneX,
+    anchorZoneY = zoneY,
     tx1 = tx1,
     ty1 = ty1,
     tx2 = tx2,
@@ -331,6 +228,10 @@ function Apply.resolveContext(map, helpers, tileTheme)
     entryLocal = {
       x = entryLocalX,
       y = entryLocalY,
+    },
+    entryTile = {
+      tx = entryTx,
+      ty = entryTy,
     },
     floorGid = floorGid,
     wallGid = wallGid,
@@ -349,17 +250,33 @@ function Apply.apply(context, layout, content)
   local groundData = context.groundLayer.dataDecoded
   local collisionData = context.collisionLayer.dataDecoded
 
-  for y = 1, layout.height do
-    for x = 1, layout.width do
-      local tx = context.tx1 + x - 1
-      local ty = context.ty1 + y - 1
-      local idx = (ty - 1) * map.width + tx
-      if layout.blocked[y][x] then
-        groundData[idx] = pickWallTile(context, layout, x, y)
-        collisionData[idx] = context.collisionWallGid
-      else
-        groundData[idx] = pickWalkableTile(context, layout, x, y)
-        collisionData[idx] = 0
+  local function shouldPaintTile(tx, ty)
+    if not context.generatedZoneSet then
+      return tx >= context.tx1 and tx <= context.tx2 and ty >= context.ty1 and ty <= context.ty2
+    end
+    local zx = math.floor((tx - 1) / map.zoneWidthTiles) + 1
+    local zy = math.floor((ty - 1) / map.zoneHeightTiles) + 1
+    return context.generatedZoneSet[zx .. ":" .. zy] == true
+  end
+
+  for ty = 1, map.height do
+    for tx = 1, map.width do
+      if shouldPaintTile(tx, ty) then
+        local idx = (ty - 1) * map.width + tx
+        local lx = tx
+        local ly = ty
+        if not context.generatedZoneSet then
+          lx = tx - context.tx1 + 1
+          ly = ty - context.ty1 + 1
+        end
+
+        if layout.blocked[ly] and layout.blocked[ly][lx] then
+          groundData[idx] = pickWallTile(context, layout, lx, ly)
+          collisionData[idx] = context.collisionWallGid
+        else
+          groundData[idx] = pickWalkableTile(context, layout, lx, ly)
+          collisionData[idx] = 0
+        end
       end
     end
   end
@@ -367,12 +284,12 @@ function Apply.apply(context, layout, content)
   for _, layer in ipairs(context.clearLayers or {}) do
     local data = layer.dataDecoded
     if data then
-      for y = 1, layout.height do
-        for x = 1, layout.width do
-          local tx = context.tx1 + x - 1
-          local ty = context.ty1 + y - 1
-          local idx = (ty - 1) * map.width + tx
-          data[idx] = 0
+      for ty = 1, map.height do
+        for tx = 1, map.width do
+          if shouldPaintTile(tx, ty) then
+            local idx = (ty - 1) * map.width + tx
+            data[idx] = 0
+          end
         end
       end
     end

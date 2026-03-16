@@ -4,6 +4,7 @@ local BodyParts = require("src.data.body_parts")
 local GearLoot = require("src.data.gear_loot")
 local Combat = require("src.systems.combat")
 local Display = require("src.core.display")
+local WallRules = require("src.world.dungeon.wall_rules")
 
 local Rendering = {}
 
@@ -12,6 +13,7 @@ local CHARACTER_TILE_H = 16
 local CHARACTER_SPACING = 1
 local CHARACTER_MARGIN = 0
 local CHARACTER_SET_INDEX = 6
+local MONSTER_CHARACTER_SET_INDEX = 5
 local CHARACTER_SCALE = 2
 local HIDE_UI_OVERLAY_FOR_TESTING = true
 
@@ -110,6 +112,11 @@ local function drawFriendlyNpcSprite(npc)
   local setIndex = npc.spriteSet or 4
   love.graphics.setColor(1, 1, 1, 1)
   drawCharacterSprite(npc, setIndex)
+end
+
+local function drawMonsterSprite(monster)
+  love.graphics.setColor(1, 1, 1, 1)
+  drawCharacterSprite(monster, MONSTER_CHARACTER_SET_INDEX)
 end
 
 local function slotColor(slot)
@@ -253,6 +260,68 @@ local function drawBuildSpot(game)
   love.graphics.setLineWidth(1)
 end
 
+local function tileIndex(map, tx, ty)
+  if tx < 1 or ty < 1 or tx > map.width or ty > map.height then
+    return nil
+  end
+  return (ty - 1) * map.width + tx
+end
+
+local function getHoveredTile(game)
+  local sx, sy = love.mouse.getPosition()
+  local lx, ly = Display.toLogicalCoords(sx, sy)
+  local wx = lx + (game.camera.x or 0) + (game.camera.shakeX or 0)
+  local wy = ly + (game.camera.y or 0) + (game.camera.shakeY or 0)
+  return Map.worldToTile(wx, wy)
+end
+
+local function drawTileInspector(game)
+  if not game.map or not game.map.tiled then
+    return
+  end
+
+  local tx, ty = getHoveredTile(game)
+  local idx = tileIndex(game.map, tx, ty)
+  if not idx then
+    return
+  end
+
+  local runtime = game.map.tiled
+  local groundLayer = runtime.tilelayers and runtime.tilelayers[1]
+  local collisionLayer = runtime.collisionLayer or runtime.collisionByName["walls"] or runtime.collisionByName["blocked"]
+  local groundGid = (groundLayer and groundLayer.dataDecoded and groundLayer.dataDecoded[idx]) or 0
+  local collisionGid = (collisionLayer and collisionLayer.dataDecoded and collisionLayer.dataDecoded[idx]) or 0
+
+  local theme = (game.map.procgen and game.map.procgen.cave and game.map.procgen.cave.tileTheme) or nil
+  local wallRule = "n/a"
+  if theme and collisionLayer and collisionLayer.dataDecoded then
+    local function isWalkableAt(ix, iy)
+      local i = tileIndex(game.map, ix, iy)
+      if not i then
+        return false
+      end
+      return (collisionLayer.dataDecoded[i] or 0) == 0
+    end
+
+    local _, rule = WallRules.pick(theme, isWalkableAt, tx, ty, theme.wallGid or groundGid)
+    wallRule = rule or wallRule
+  end
+
+  local center = Map.tileToWorld(tx, ty)
+  local tileSize = Map.tileSize
+  local left = center.x - tileSize * 0.5
+  local top = center.y - tileSize * 0.5
+
+  love.graphics.setColor(0.1, 0.95, 0.88, 0.95)
+  love.graphics.rectangle("line", left, top, tileSize, tileSize)
+  love.graphics.setColor(0.03, 0.03, 0.04, 0.86)
+  love.graphics.rectangle("fill", left + 2, top - 56, 274, 52, 6, 6)
+  love.graphics.setColor(0.84, 0.92, 0.9, 1)
+  love.graphics.print(string.format("tile %d,%d", tx, ty), left + 8, top - 50)
+  love.graphics.print(string.format("ground:%d coll:%d", groundGid, collisionGid), left + 8, top - 34)
+  love.graphics.print("rule: " .. wallRule, left + 8, top - 18)
+end
+
 function Rendering.drawWorld(game)
   if game.map.tiled then
     Map.draw(game.map, {
@@ -276,15 +345,14 @@ function Rendering.drawWorld(game)
   if game.necromancer.alive then
     drawEntityShadow(game.necromancer)
     drawNecromancerSprite(game.necromancer)
-    Combat.drawWeapon(game.necromancer, game.ui.dig ~= nil)
+    Combat.drawWeapon(game.necromancer)
     drawHealthBar(game.necromancer, 34)
   end
 
   if game.monster and game.monster.alive then
     drawEntityShadow(game.monster)
-    love.graphics.setColor(0.74, 0.62, 0.55)
-    love.graphics.circle("fill", game.monster.x, game.monster.y, game.monster.radius)
-    Combat.drawWeapon(game.monster, false)
+    drawMonsterSprite(game.monster)
+    Combat.drawWeapon(game.monster)
     drawHealthBar(game.monster, 44)
   end
 
@@ -310,6 +378,9 @@ function Rendering.drawWorld(game)
   if game.debug and game.debug.showLOS then
     drawEnemyLOS(game)
   end
+  if game.debug and game.debug.inspectTiles then
+    drawTileInspector(game)
+  end
 end
 
 function Rendering.drawHUD(game)
@@ -328,7 +399,7 @@ function Rendering.drawHUD(game)
   love.graphics.setColor(0.72, 0.76, 0.72)
   local controlledName = (game.controlled == "monster") and "Monster" or "Necromancer"
   love.graphics.print("Controlled: " .. controlledName .. " (Q to swap)", 24, 44)
-  love.graphics.print(string.format("Zone: %d,%d  WASD move, J/Space light, K heavy, E interact", game.zone.x, game.zone.y), 24, 64)
+  love.graphics.print(string.format("Zone: %d,%d  WASD move, J/Space quick, K strong, E interact", game.zone.x, game.zone.y), 24, 64)
   local inputName = game.controllerName or "Keyboard / Mouse"
   love.graphics.print("Input: " .. inputName, 24, 84)
 
@@ -470,12 +541,14 @@ function Rendering.drawHUD(game)
     local caveProcgen = (game.map and game.map.procgen and game.map.procgen.cave) or nil
     local caveProcgenText = "Cave procgen: static fallback"
     if caveProcgen then
+      local areaCount = caveProcgen.areaCount or 1
       caveProcgenText = string.format(
-        "Cave procgen: seed=%d attempts=%d zone=%d,%d",
+        "Cave procgen: seed=%d attempts=%d zone=%d,%d areas=%d",
         caveProcgen.seed or 0,
         caveProcgen.attempts or 0,
         caveProcgen.zoneX or 0,
-        caveProcgen.zoneY or 0
+        caveProcgen.zoneY or 0,
+        areaCount
       )
     end
 
@@ -495,6 +568,7 @@ function Rendering.drawHUD(game)
     love.graphics.print("F4: Toggle NPC path lines", dbgX + 262, dbgY + 10)
     love.graphics.print("F5: Toggle LOS debug", dbgX + 262, dbgY + 28)
     love.graphics.print("F6: Toggle enemy suppression", dbgX + 262, dbgY + 46)
+    love.graphics.print("F7: Toggle tile inspector", dbgX + 262, dbgY + 64)
   end
 end
 

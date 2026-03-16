@@ -59,7 +59,7 @@ love .
 - Expanded multi-zone town (north/center/south) plus hill-town above the graveyard
 - Wide-open overworld transitions between town, graveyard, field, and forest
 - Ground trail decals guiding travel toward the woods and cave
-- Procedural cave generation + autotiling for the cave destination zone
+- Procedural multi-area cave generation + autotiling across a connected cave footprint
 
 ## Documentation
 

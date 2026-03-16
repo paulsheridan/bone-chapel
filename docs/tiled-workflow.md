@@ -51,4 +51,4 @@ Handled in `src/world/map.lua` and `src/world/tiled_map.lua`.
 ## Cave-Specific Note
 
 The cave portal warp is defined in the `warps` object layer (`kind = "portal"`).
-Procedural cave replacement targets that destination zone after map load.
+Procedural cave replacement now targets a destination anchor zone and expands into a connected multi-zone footprint after map load.

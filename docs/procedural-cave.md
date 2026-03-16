@@ -7,10 +7,13 @@ This doc is for future contributors and coding agents working on cave generation
 - Cave generation starts from `src/world/map.lua`.
 - `Map.load()` calls `Dungeon.applyProceduralCave(...)` when procedural cave support is enabled.
 - Core flow in `src/world/dungeon.lua`:
-  - `Generator.generate(...)`
+  - `MacroLayout.generate(...)`
+  - `Generator.generateComposite(...)`
   - `Populate.generate(...)`
   - `Validate.check(...)`
   - `Apply.apply(...)`
+
+The cave now generates as a connected multi-area dungeon across multiple zones instead of a single destination zone.
 
 ## Retry and Fallback Behavior
 
@@ -21,6 +24,7 @@ This doc is for future contributors and coding agents working on cave generation
 
 ## Separation of Concerns
 
+- Macro footprint/shape decisions are in `src/world/dungeon/macro_layout.lua`.
 - Geometry decisions are in `src/world/dungeon/generator.lua` and `src/world/dungeon/validate.lua`.
 - Art/autotile decisions are in `src/world/dungeon/apply.lua` with palette values configured in `src/world/map.lua`.
 - Keep these concerns separate when making changes.
@@ -31,13 +35,14 @@ Two different rule sets are active and should not be conflated:
 
 - Wall thickness (`config.wallThickness` in `src/world/dungeon/config.lua`):
   - `minVertical = 3`
-  - `minHorizontal = 2`
-  - `passes = 1`
+  - `minHorizontal = 3`
+  - `passes = 2`
 
 - Corner spacing (`config.cornerSpacing` in `src/world/dungeon/config.lua`):
   - `minStraightBetweenCorners = 2`
-  - Enforced by counting short edge runs in `enforceMinStraightWalls(...)`
-  - No carve-based mutation for spacing (count/score only)
+  - Enforced by extending short edge runs in `enforceMinStraightWalls(...)`
+  - `allowedViolations = 1`
+  - `allowRelaxedFallback = true`
 
 ## Corner-Spacing Enforcement Notes
 
@@ -58,6 +63,7 @@ Two different rule sets are active and should not be conflated:
 ## Debug and Testing
 
 - `F3`: debug overlay (shows cave procgen seed/attempts).
+- `F3`: debug overlay (shows cave procgen seed/attempts/area count).
 - `F6`: enemy suppression toggle for calmer cave testing.
 - Standard smoke check:
 

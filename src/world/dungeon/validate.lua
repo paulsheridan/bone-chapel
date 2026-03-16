@@ -67,6 +67,14 @@ function Validate.check(_, layout, content, config)
     return false
   end
 
+  local perAreaMin = math.max(0, math.floor(config.minFloorTilesPerArea or 0))
+  if perAreaMin > 0 then
+    local areaCount = math.max(1, math.floor(layout.areaCount or 1))
+    if floorCount < (perAreaMin * areaCount) then
+      return false
+    end
+  end
+
   for _, pickup in ipairs(content.pickups) do
     if not isReachable(visited, pickup.x, pickup.y) then
       return false

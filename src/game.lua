@@ -1,6 +1,7 @@
 local Map = require("src.world.map")
 local BodyParts = require("src.data.body_parts")
 local GearLoot = require("src.data.gear_loot")
+local Weapons = require("src.data.weapons")
 local BuildMenu = require("src.ui.build_menu")
 local Math2D = require("src.core.math2d")
 local Display = require("src.core.display")
@@ -52,6 +53,9 @@ local BALANCE = {
   },
 }
 
+local DEFAULT_NECROMANCER_WEAPON = "sword_iron"
+local DEFAULT_MONSTER_WEAPON = "single_axe"
+
 local function newNecromancer(start)
   return {
     x = start.x,
@@ -62,13 +66,16 @@ local function newNecromancer(start)
     health = 100,
     maxHealth = 100,
     attackCooldown = 0,
-    attackRange = 58,
-    attackArc = math.rad(55),
+    attackRange = 38,
+    attackArc = math.rad(85),
     attackDamage = 24,
-    weapon = "staff",
+    attackCooldownBase = 0.24,
+    baseAttackCooldown = 0.24,
+    baseAttackRange = 38,
+    baseAttackArc = math.rad(85),
+    weaponId = DEFAULT_NECROMANCER_WEAPON,
     facingX = 0,
     facingY = 1,
-    attackAnim = 0,
     comboStep = 0,
     comboTimer = 0,
     maxPoise = 34,
@@ -251,6 +258,7 @@ end
 function Game.load()
   Game.map = Map.load()
   Game.necromancer = newNecromancer(Game.map.start)
+  Combat.equipWeapon(Game.necromancer, Game.necromancer.weaponId)
   Game.monster = nil
   Game.controlled = "necromancer"
 
@@ -317,6 +325,7 @@ function Game.load()
     enabled = false,
     showPaths = false,
     showLOS = false,
+    inspectTiles = false,
     suppressEnemies = false,
     storedEnemies = nil,
   }
@@ -401,6 +410,18 @@ function Game:getControlledEntity()
     return self.monster
   end
   return self.necromancer
+end
+
+function Game:setActorWeapon(entity, weaponId)
+  if not entity or not entity.alive then
+    return
+  end
+
+  local weapon = Weapons.get(weaponId)
+  Combat.equipWeapon(entity, weapon.id)
+  if entity == self.monster then
+    self:refreshMonsterStats()
+  end
 end
 
 function Game:addPart(slot)
@@ -519,6 +540,15 @@ function Game:assembleMonster()
 
   local parts = cloneEquippedParts(self.build.equipped)
 
+  local faceX = self.necromancer.facingX or 0
+  local faceY = self.necromancer.facingY or 1
+  local spriteFacing = "down"
+  if math.abs(faceX) > math.abs(faceY) then
+    spriteFacing = (faceX < 0) and "left" or "right"
+  elseif faceY < 0 then
+    spriteFacing = "up"
+  end
+
   self.monster = {
     x = spawnX,
     y = spawnY,
@@ -528,17 +558,21 @@ function Game:assembleMonster()
     health = stats.health,
     maxHealth = stats.health,
     attackCooldown = 0,
-    attackRange = 42,
-    attackArc = math.rad(102),
+    attackRange = 35,
+    attackArc = math.rad(100),
     attackDamage = stats.strength,
-    attackCooldownBase = 0.35,
-    baseAttackCooldown = 0.35,
-    baseAttackRange = 42,
-    baseAttackArc = math.rad(102),
-    weapon = "claws",
-    facingX = self.necromancer.facingX or 0,
-    facingY = self.necromancer.facingY or 1,
-    attackAnim = 0,
+    attackCooldownBase = 0.34,
+    baseAttackCooldown = 0.34,
+    baseAttackRange = 35,
+    baseAttackArc = math.rad(100),
+    weaponId = DEFAULT_MONSTER_WEAPON,
+    facingX = faceX,
+    facingY = faceY,
+    spriteFacing = spriteFacing,
+    spriteAnimStep = 1,
+    spriteAnimTimer = 0,
+    spriteFrame = 1,
+    spriteMoving = false,
     comboStep = 0,
     comboTimer = 0,
     alive = true,
@@ -549,6 +583,8 @@ function Game:assembleMonster()
       health = stats.health,
     },
   }
+
+  Combat.equipWeapon(self.monster, self.monster.weaponId)
 
   self:refreshMonsterStats()
   self.monster.health = self.monster.maxHealth
@@ -776,6 +812,7 @@ function Game.keypressed(key)
     if not Game.debug.enabled then
       Game.debug.showPaths = false
       Game.debug.showLOS = false
+      Game.debug.inspectTiles = false
     end
     return
   elseif key == "f4" then
@@ -788,6 +825,10 @@ function Game.keypressed(key)
     return
   elseif key == "f6" then
     Game:toggleEnemySuppression()
+    return
+  elseif key == "f7" then
+    Game.debug.inspectTiles = not Game.debug.inspectTiles
+    Game.debug.enabled = Game.debug.inspectTiles or Game.debug.enabled
     return
   end
 

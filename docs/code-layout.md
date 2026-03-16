@@ -37,6 +37,7 @@ This document maps major Lua modules to their responsibilities.
 
 - `src/world/dungeon.lua`: cave orchestration (generate -> populate -> validate -> apply) with retries.
 - `src/world/dungeon/config.lua`: cave tuning knobs.
+- `src/world/dungeon/macro_layout.lua`: multi-zone dungeon footprint graph generation.
 - `src/world/dungeon/generator.lua`: room/corridor geometry and wall-rule checks.
 - `src/world/dungeon/populate.lua`: enemy/pickup placement for generated cave zone.
 - `src/world/dungeon/validate.lua`: reachability and minimum-floor checks.
